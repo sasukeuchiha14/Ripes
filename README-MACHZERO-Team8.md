@@ -5,6 +5,8 @@
 | Upstream repository | https://github.com/mortbopet/Ripes |
 | Our fork | https://github.com/sasukeuchiha14/Ripes |
 | Fix branch | [`added_precedence`](https://github.com/sasukeuchiha14/Ripes/tree/added_precedence) |
+| Issue | [mortbopet/Ripes#489](https://github.com/mortbopet/Ripes/issues/489): Assembler expressions ignore operator precedence (evaluated right-to-left) |
+| Pull request | [mortbopet/Ripes#490](https://github.com/mortbopet/Ripes/pull/490): Fix operator precedence in assembler expression evaluation |
 
 Ripes is a visual RISC-V processor simulator and assembly editor written in C++ with Qt 6. It is used in computer architecture courses to write RISC-V assembly, assemble it, and watch it run through different pipeline models.
 
@@ -41,10 +43,11 @@ Ripes is a visual RISC-V processor simulator and assembly editor written in C++ 
 - **Chose between two fixes:**
   1. Fix the evaluator so it follows operator precedence and evaluates left-to-right. **We chose this one.**
   2. Document the current behaviour so users know they must add parentheses.
+- **Reported it upstream** as issue [#489](https://github.com/mortbopet/Ripes/issues/489). The issue shows examples with the wrong and expected values (`.equ`, `addi`, `.word`), quotes the author's comment and the release notes, and offers both fixes to the maintainer.
 
 ## Round 3: Implementing the fix
 
-The coding is complete. The fix is committed on the `added_precedence` branch of our fork (commit `4da522c`, "Fix operator precedence in assembler expression evaluation").
+The coding is complete. The fix is committed on the `added_precedence` branch of our fork (commit `4da522c`, "Fix operator precedence in assembler expression evaluation"). It has been submitted upstream as pull request [#490](https://github.com/mortbopet/Ripes/pull/490).
 
 ### Files changed
 
@@ -84,8 +87,9 @@ The parser has one function per precedence level. Each function handles its own 
 
 - [x] Fix implemented and formatted
 - [x] Pushed to `added_precedence` on our fork
-- [ ] Issue raised on `mortbopet/Ripes`
-- [ ] Pull request opened, linked to the issue with `Fixes #<issue>`
+- [x] Issue raised on `mortbopet/Ripes`: [#489](https://github.com/mortbopet/Ripes/issues/489)
+- [x] Pull request opened: [#490](https://github.com/mortbopet/Ripes/pull/490). It contains `Fixes #489`, so the issue closes automatically when the PR is merged.
+- [ ] Review and merge by the maintainer
 
 ---
 
