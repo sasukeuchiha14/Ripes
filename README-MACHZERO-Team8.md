@@ -91,7 +91,7 @@ The parser has one function per precedence level. Each function handles its own 
 
 ## Validation and testing
 
-We validated the fix at four levels.
+We validated the fix at five levels.
 
 ### 1. The maintainer's existing test suites
 
@@ -122,6 +122,13 @@ We wrote a separate harness of 22 cases. It calls `evaluate()` directly and link
 | Unary minus | `-3+5 = 2`, `5*-3 = -15`, `--4 = 4` |
 | Bitwise operators | `1\|2&3 = 3`, `6&3\|8 = 10`, `1+1&3 = 2` |
 | Errors still reported | `(1+2`, `1+2)`, `1+`, `5/0`, `2(3)` |
+
+These cases call `evaluate()` directly.
+
+`2(3)` behaves differently in the editor, and our fix doesn't change that. Before any expression is evaluated, the assembler's tokenizer (`joinParentheses`) turns `x(y)` into two separate operands, because RISC-V memory operands are written as `offset(register)`, for example `lw a0, 0(t0)`. So in source code:
+
+- `.word 2(3)` is read as `.word 2 3` and stores two words, 2 and 3. That is valid, so there is no error.
+- `addi a0, zero, 2(3)` is read as four operands and fails with "expects 3 arguments, but got 4".
 
 ### 3. Manual testing in the app (before and after)
 
@@ -169,6 +176,57 @@ The program uses `la`, so the expressions that the assembler generates for itsel
 
 - `clang-format` 23.1.3 (the version the repository's CI pins) reports no changes on the modified files.
 - The upstream `clang-format` CI check should therefore pass.
+
+### 5. Memory and speed (before vs after)
+
+We wanted to make sure the new parser doesn't cost more memory, so we compared it with the original.
+
+**Method.** We built one benchmark program twice: once with the original upstream `expreval.cpp`, and once with our fixed version. Everything else was identical.
+
+- The benchmark counts every heap allocation (`malloc`, `calloc`, `realloc`, `free`) made while an expression is evaluated or a program is assembled. Qt's string buffers are included.
+- Each case is first run once as a warm-up, then measured.
+- Times are the median of repeated runs. The benchmark itself was run four times, alternating the two versions.
+- As a check that each build really ran its own parser, the original version returns 11 for `10-2-3` and the fixed version returns 5.
+
+The tables use these terms:
+
+- **Allocations:** how many separate blocks of memory were requested.
+- **Total allocated:** the sum of all those blocks, including memory that was freed again along the way.
+- **Peak in use:** the most memory held at any one moment. This is what matters for the program's memory footprint.
+
+#### Evaluating a single expression
+
+| Expression | Allocations (before / after) | Total allocated (bytes) | Peak in use (bytes) | Time per evaluation |
+|---|---|---|---|---|
+| `2*3+4` | 9 / 9 | 436 → 400 | 416 → 380 | ~1.5 µs → ~2.5 µs |
+| `10-2-3` | 9 / 9 | 436 → 402 | 416 → 382 | ~1.6 µs → ~2.6 µs |
+| `(0x2*(3+4))+4` | 14 / 14 | 642 → 598 | 622 → 578 | ~2.9 µs → ~4.5 µs |
+| `1+2*3-4/2+5%3*(6-7)` | 27 / 27 | 1,396 → 1,288 | 1,376 → 1,268 | ~4.3 µs → ~6.5 µs |
+| `1+1+...+1` (100 terms) | 300 / 300 | 15,956 → 14,756 | 15,936 → 14,736 | ~52 µs → ~63 µs |
+
+- Both versions build the same number of tree nodes, so the number of allocations is identical.
+- The fixed version uses about 8% fewer bytes. The original builds each number by appending one character at a time to a string, while the new parser copies the whole number in one step.
+- Neither version leaves memory allocated after an evaluation, so there are no leaks.
+- The fixed version takes about 1 µs longer per small expression. Each number now passes through one function per precedence level, seven in total, instead of being read directly.
+
+#### Assembling a whole program
+
+| Program | Allocations (before → after) | Total allocated | Peak in use |
+|---|---|---|---|
+| Demo program from the screenshots (4 expressions, 18 lines) | 1,105 → 1,105 | 111,188 B → 111,040 B | 27,444 B → 27,444 B |
+| `examples/assembly/complexMul.s` (72 lines, no arithmetic expressions) | 5,295 → 5,291 | 477,992 B → 477,756 B | 122,777 B → 122,777 B |
+| `examples/assembly/factorial.s` (47 lines, no arithmetic expressions) | 3,168 → 3,165 | 283,128 B → 282,912 B | 77,079 B → 77,079 B |
+| Generated stress test (1,000 lines, 3,000 expressions) | 1,536,976 → 1,536,975 | 111.89 MB → 111.78 MB | 3.31 MB → 3.31 MB |
+| RISC-V ISA test programs (36 programs) | 224,014 → 223,933 | 18.86 MB → 18.85 MB | 285,555 B → 285,555 B |
+
+- The 36 RISC-V test programs are the RV32 tests in `test/riscv-tests` that assemble with the RV32IM instruction set, assembled one after another.
+- **Peak memory is identical for every program.** Each assembly uses far more memory for the rest of the assembler's work (instructions, symbols, sections) than for parsing expressions.
+- **Assembly time showed no measurable difference.** The variation from one run to the next was larger than any gap between the versions. For example, the RISC-V test programs took 33.0–35.3 ms with the original and 32.5–38.9 ms with the fix. Even in the stress test, the extra ~1 µs per expression adds up to about 3 ms out of roughly 145 ms.
+- The whole benchmark process peaked at 42.9 MB of memory with both versions, and almost all of that is Qt.
+
+#### Running the program
+
+Expressions are evaluated once, when the program is assembled, and become fixed numbers in the machine code. The simulator never evaluates expressions while it runs a program, so memory use and speed during execution are not affected by this change.
 
 ---
 
